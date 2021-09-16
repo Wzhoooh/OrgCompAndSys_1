@@ -5,6 +5,9 @@
 #include <iostream>
 #include <cstdlib>
 #include <string>
+#include <vector>
+#include <sstream>
+#include <string>
 
 static const size_t numBitsInByte = 8;
 
@@ -17,13 +20,13 @@ union LongDouble
         unsigned long long m;
         unsigned short p;
     } Parts;
-    unsigned char bytes[1];
+    unsigned char bytes[sizeof(Parts)];
 };
 
 union Integer
 {
     int value;
-    unsigned char bytes[1];
+    unsigned char bytes[sizeof(value)];
 };
 #pragma pack()
 
@@ -95,23 +98,31 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
     // check input parameters
     if (true)
     {
-        // check of non-negativity of group first element
+        // check for too big size
+        if (firstGroupFirstElem >= sizeof(number.bytes) * numBitsInByte || 
+                secondGroupFirstElem >= sizeof(number.bytes) * numBitsInByte)
+            throw std::logic_error("too big index of first element");
+
+        if (sizeOfFirstGroup >= sizeof(number.bytes) * numBitsInByte || 
+                sizeOfSecondGroup >= sizeof(number.bytes) * numBitsInByte)
+            throw std::logic_error("too big size of group");
+
+        // check for non-negativity of group first element
         if (firstGroupFirstElem < 0 || secondGroupFirstElem < 0)
             throw std::logic_error("first index of group < 0");
 
-        // check of positivity of group size
+        // check for positivity of group size
         if (sizeOfFirstGroup <= 0 || sizeOfSecondGroup <= 0)
             throw std::logic_error("size of group <= 0");
 
-        //! что делать с sizeof(__float80)???
         // check do groups fit into type size
-        if (firstGroupFirstElem + sizeOfFirstGroup >= sizeof(number.value) * numBitsInByte)
+        if (firstGroupFirstElem + sizeOfFirstGroup >= sizeof(number.bytes) * numBitsInByte)
             throw std::logic_error("first group does not fit into type size");
 
-        if (secondGroupFirstElem + sizeOfSecondGroup >= sizeof(number.value) * numBitsInByte)
+        if (secondGroupFirstElem + sizeOfSecondGroup >= sizeof(number.bytes) * numBitsInByte)
             throw std::logic_error("second group does not fit into type size");
 
-        // check do groups intersect
+        // check for groups intersect
         size_t firstGroupLastElem = firstGroupFirstElem + sizeOfFirstGroup - 1;
         size_t secondGroupLastElem = secondGroupFirstElem + sizeOfSecondGroup - 1;
         if (firstGroupLastElem >= secondGroupFirstElem && firstGroupLastElem <= secondGroupLastElem ||
@@ -119,10 +130,19 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
             throw std::logic_error("groups intersect");
     }
 
+    // change number of groups: 1st group must be before 2nd group
+    if (firstGroupFirstElem > sizeOfSecondGroup)
+    {
+        size_t transferInfo[] = {firstGroupFirstElem, sizeOfFirstGroup};
+        firstGroupFirstElem = secondGroupFirstElem;
+        sizeOfFirstGroup = sizeOfSecondGroup;
+        secondGroupFirstElem = transferInfo[0];
+        sizeOfSecondGroup = transferInfo[1];
+    }
     // move the gap begween groups
     auto copyOfNumber = number;
-    size_t firstGapElem = std::min(firstGroupFirstElem + sizeOfFirstGroup, secondGroupFirstElem + sizeOfSecondGroup);
-    size_t sizeOfGap = std::max(firstGroupFirstElem, secondGroupFirstElem) - firstGapElem;
+    size_t firstGapElem = firstGroupFirstElem + sizeOfFirstGroup;
+    size_t sizeOfGap = secondGroupFirstElem - firstGapElem;
     // gap offset may be positive or negative
     int gapOffset = (int)sizeOfFirstGroup - (int)sizeOfSecondGroup;
     for (int i = 0; i < sizeOfGap; i++)
@@ -145,29 +165,14 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
     return copyOfNumber;
 }
 
-
 int main()
 {
-    Integer a = {0x12810447};
-    printBinaryValue(a.value);
-    std::cout << "\n";
-    printPlaces(sizeof(a.value) * numBitsInByte);
-    std::cout << "\n\n";
-
-    Integer b = getSwappedNumber(a, 20, 11, 1, 10);
-    printBinaryValue(b.value);
-    std::cout << "\n";
-    printPlaces(sizeof(b.value) * numBitsInByte);
-    std::cout << "\n";
-    return 0;
-
-
     for (;;)
     {
         // состояние - выбор типа числа: i или r
         std::cout << "Enter number type: i (integer) or r (real)\n>";
         std::string numberType;
-        std::cin >> numberType;
+        std::getline(std::cin, numberType);
         if (numberType != "i" && numberType != "r")
         {
             std::cout << "Error: unknown type of number";
@@ -182,22 +187,74 @@ int main()
                 // состояние - ввод числа
                 std::cout << "Enter integer number\ninteger>";
                 std::string strN;
-                std::cin >> strN;
+                std::getline(std::cin, strN);
                 if (strN == "..")
                     break;
 
-                int n;
+                Integer n;
                 try
                 {
-                    n = std::stoi(strN);
-                    std::cout << n << "\n";
-                    printBinaryValue(n);
+                    n.value = std::stoi(strN);
+                    std::cout << n.value << "\n";
+                    printBinaryValue(n.value);
                     std::cout << "\n";
                     printPlaces(sizeof(n) * numBitsInByte);
                 }
                 catch(std::logic_error& e)
                 {
                     std::cerr << "Error: incorrect number\n";
+                    continue;
+                }
+                
+                for (;;)
+                {
+                    // состояние - ввод кода операции
+                    std::cout << "Enter operation: s (swap)\ninteger/" << n.value << ">";
+                    std::string operation;
+                    std::getline(std::cin, operation);
+                    if (operation == "..")
+                        break;
+                    if (operation != "s")
+                    {
+                        std::cerr << "Error: unknown type of operation\n";
+                        continue;
+                    }
+                    for (;;)
+                    {
+                        // состояние - ввод параметров для операции
+                        std::cout << "Enter parameters: 2 * [position of first element, size of group]";
+                        std::cout << "\ninteger/" << n.value << "/swap>";
+                        std::string parameters;
+                        std::getline(std::cin, parameters);
+                        if (parameters == "..")
+                            break;
+
+                        std::stringstream is(parameters, std::ios_base::in);
+                        std::vector<size_t> numParameters;
+                        size_t param;
+                        while (is >> param)
+                            numParameters.push_back(param);
+
+                        if (numParameters.size() != 4)
+                        {
+                            std::cerr << "Error: unkorrect number of operationparameters\n";
+                            continue;
+                        }
+                        try
+                        {
+                            auto res = getSwappedNumber(n, numParameters[0], numParameters[1], 
+                                numParameters[2], numParameters[3]);
+                            std::cout << res.value << "\n";
+                            printBinaryValue(res.value);
+                            std::cout << "\n";
+                            printPlaces(sizeof(res) * numBitsInByte);
+                        }
+                        catch(const std::logic_error& e)
+                        {
+                            std::cerr << "Error: " << e.what() << '\n';
+                            continue;
+                        }
+                    }
                 }
             }
         }
@@ -208,7 +265,7 @@ int main()
                 // состояние - ввод числа
                 std::cout << "Enter real number\nreal>";
                 std::string strN;
-                std::cin >> strN;
+                std::getline(std::cin, strN);
                 if (strN == "..")
                         break;
 
@@ -225,6 +282,7 @@ int main()
                 catch(std::logic_error& e)
                 {
                     std::cerr << "Error: incorrect number\n";
+                    continue;
                 }
             }
         }
