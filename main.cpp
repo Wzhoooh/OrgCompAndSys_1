@@ -120,28 +120,27 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
     }
 
     // move the gap begween groups
-    Т copyOfNumber = number;
-    size_t firstGapElem = firstGroupFirstElem + sizeOfFirstGroup;
-    size_t sizeOfGap = secondGroupFirstElem - firstGapElem;
+    auto copyOfNumber = number;
+    size_t firstGapElem = std::min(firstGroupFirstElem + sizeOfFirstGroup, secondGroupFirstElem + sizeOfSecondGroup);
+    size_t sizeOfGap = std::max(firstGroupFirstElem, secondGroupFirstElem) - firstGapElem;
     // gap offset may be positive or negative
-    int gapOffset = (int)(firstGroupFirstElem + sizeOfFirstGroup) - 
-                    (int)(secondGroupFirstElem + sizeOfSecondGroup);
-    for (i = 0; i < sizeOfGap; i++)
+    int gapOffset = (int)sizeOfFirstGroup - (int)sizeOfSecondGroup;
+    for (int i = 0; i < sizeOfGap; i++)
     {
-        bool bit = getBit(number.bits, firstGapElem + i);
-        setBit(copyOfNumber.bits, i + gapOffset);
+        bool bit = getBit(number.bytes, firstGapElem + i);
+        setBit(copyOfNumber.bytes, firstGapElem + i - gapOffset, bit);
     }
     // copy bits from first group
-    for (i = 0; i < sizeOfFirstGroup; i++)
+    for (int i = 0; i < sizeOfFirstGroup; i++)
     {
-        bool bit = getBit(number.bits, firstGroupFirstElem + i);
-        setBit(copyOfNumber.bits, secondGroupFirstElem, bit)
+        bool bit = getBit(number.bytes, firstGroupFirstElem + i);
+        setBit(copyOfNumber.bytes, secondGroupFirstElem + i - gapOffset, bit);
     }
     // copy bits from second group
-    for (i = 0; i < sizeOfSecondGroup; i++)
+    for (int i = 0; i < sizeOfSecondGroup; i++)
     {
-        bool bit = getBit(number.bits, secondGroupFirstElem + i);
-        setBit(copyOfNumber.bits, firstGroupFirstElem, bit)
+        bool bit = getBit(number.bytes, secondGroupFirstElem + i);
+        setBit(copyOfNumber.bytes, firstGroupFirstElem + i, bit);
     }
     return copyOfNumber;
 }
@@ -149,59 +148,39 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
 
 int main()
 {
-    // unsigned int a = 0x04000446;
-    // printBinaryValue(a);
-    // std::cout << "\n";
-    // printPlaces(sizeof(a) * numBitsInByte);
-    // std::cout << "\n";
-    //
-    // setBit(&a, 10, false);
-    // setBit(&a, 2, false);
-    // setBit(&a, 26, false);
-    // setBit(&a, 31, true);
-    // setBit(&a, 28, true);
-    //
-    // printBinaryValue(a);
-    // std::cout << "\n";
-    // printPlaces(sizeof(a) * numBitsInByte);
-    // return 0;
-
-    Integer a = {0x04000446, nullptr};
-    printBinaryValue(getSwappedNumber(a, 1, 5, 9, 6).value);
+    Integer a = {0x12810447};
+    printBinaryValue(a.value);
     std::cout << "\n";
-    printPlaces(sizeof(a) * numBitsInByte);
-    std::cout << "\n";
+    printPlaces(sizeof(a.value) * numBitsInByte);
+    std::cout << "\n\n";
 
-    // union A
-    // {
-    //     char a[4];
-    //     short b[2];
-    // };
-    // A u;
-    // u.b[0] = 256;
-    // u.b[1] = 512;
-    // std::cout << (int)u.a[0] << (int)u.a[1] << (int)u.a[2] << (int)u.a[3];
-    // return 0;
+    Integer b = getSwappedNumber(a, 20, 11, 1, 10);
+    printBinaryValue(b.value);
+    std::cout << "\n";
+    printPlaces(sizeof(b.value) * numBitsInByte);
+    std::cout << "\n";
+    return 0;
+
 
     for (;;)
     {
         // состояние - выбор типа числа: i или r
         std::cout << "Enter number type: i (integer) or r (real)\n>";
-        char numberType;
+        std::string numberType;
         std::cin >> numberType;
-        if (numberType != 'i' && numberType != 'r')
+        if (numberType != "i" && numberType != "r")
         {
             std::cout << "Error: unknown type of number";
             continue;
         }
 
-        bool isInteger = numberType == 'i';
+        bool isInteger = numberType == "i";
         if (isInteger)
         {
             for (;;)
             {
                 // состояние - ввод числа
-                std::cout << "Enter integer number\ni>";
+                std::cout << "Enter integer number\ninteger>";
                 std::string strN;
                 std::cin >> strN;
                 if (strN == "..")
@@ -227,7 +206,7 @@ int main()
             for (;;)
             {
                 // состояние - ввод числа
-                std::cout << "Enter real number\nr>";
+                std::cout << "Enter real number\nreal>";
                 std::string strN;
                 std::cin >> strN;
                 if (strN == "..")
