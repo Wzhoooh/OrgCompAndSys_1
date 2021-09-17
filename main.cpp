@@ -3,6 +3,7 @@
 */
 
 #include <iostream>
+#include <iomanip>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -51,11 +52,10 @@ void printPlaces(size_t numPlaces, std::ostream& os = std::cout)
 {
     for (int i = numPlaces - 1; i >= 0; i--)
         os << i / 10;
-
     os << "\n";
+
     for (int i = numPlaces - 1; i >= 0; i--)
         os << i % 10;
-
     os << "\n";
 }
 
@@ -66,9 +66,8 @@ inline bool getBit(const void* buf, size_t pos)
     unsigned char* charBuf = (unsigned char*)buf;
     size_t numByte = pos / numBitsInByte;
     size_t numBit = pos % numBitsInByte;
-
     unsigned char mask = 1 << numBit;
-    return *(charBuf + numByte) & mask;
+    return charBuf[numByte] & mask;
 }
 
 //! not-memory-safe function
@@ -77,17 +76,11 @@ inline void setBit(void* buf, size_t pos, bool val)
     unsigned char* charBuf = (unsigned char*)buf;
     size_t numByte = pos / numBitsInByte;
     size_t numBit = pos % numBitsInByte;
-
+    unsigned char mask = 1 << numBit;
     if (val == true)
-    {
-        unsigned char mask = 1 << numBit;
-        *(charBuf + numByte) = *(charBuf + numByte) | mask;
-    }
+        charBuf[numByte] |= mask;
     else
-    {
-        unsigned char mask = 0xff - (1 << numBit);
-        *(charBuf + numByte) = *(charBuf + numByte) & mask;
-    }
+        charBuf[numByte] &= ~mask;
 }
 
 // param: union(LongDouble or Integer)
@@ -95,16 +88,15 @@ template < typename T >
 T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup,
                                 size_t secondGroupFirstElem, size_t sizeOfSecondGroup)
 {
+    size_t numBits = sizeof(number.bytes) * numBitsInByte;
     // check input parameters
     if (true)
     {
         // check for too big size
-        if (firstGroupFirstElem >= sizeof(number.bytes) * numBitsInByte || 
-                secondGroupFirstElem >= sizeof(number.bytes) * numBitsInByte)
+        if (firstGroupFirstElem >= numBits || secondGroupFirstElem >= numBits)
             throw std::logic_error("too big index of first element");
 
-        if (sizeOfFirstGroup >= sizeof(number.bytes) * numBitsInByte || 
-                sizeOfSecondGroup >= sizeof(number.bytes) * numBitsInByte)
+        if (sizeOfFirstGroup >= numBits || sizeOfSecondGroup >= numBits)
             throw std::logic_error("too big size of group");
 
         // check for non-negativity of group first element
@@ -116,29 +108,27 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
             throw std::logic_error("size of group <= 0");
 
         // check do groups fit into type size
-        if (firstGroupFirstElem + sizeOfFirstGroup >= sizeof(number.bytes) * numBitsInByte)
+        if (firstGroupFirstElem + sizeOfFirstGroup >= numBits)
             throw std::logic_error("first group does not fit into type size");
 
-        if (secondGroupFirstElem + sizeOfSecondGroup >= sizeof(number.bytes) * numBitsInByte)
+        if (secondGroupFirstElem + sizeOfSecondGroup >= numBits)
             throw std::logic_error("second group does not fit into type size");
 
-        // check for groups intersect
+        // check for groups intersection
         size_t firstGroupLastElem = firstGroupFirstElem + sizeOfFirstGroup - 1;
         size_t secondGroupLastElem = secondGroupFirstElem + sizeOfSecondGroup - 1;
-        if (firstGroupLastElem >= secondGroupFirstElem && firstGroupLastElem <= secondGroupLastElem ||
-            secondGroupLastElem >= firstGroupFirstElem && secondGroupLastElem <= firstGroupLastElem)
+        if ((firstGroupLastElem >= secondGroupFirstElem && firstGroupLastElem <= secondGroupLastElem) ||
+            (secondGroupLastElem >= firstGroupFirstElem && secondGroupLastElem <= firstGroupLastElem))
             throw std::logic_error("groups intersect");
     }
 
     // change number of groups: 1st group must be before 2nd group
-    if (firstGroupFirstElem > sizeOfSecondGroup)
+    if (firstGroupFirstElem > secondGroupFirstElem)
     {
-        size_t transferInfo[] = {firstGroupFirstElem, sizeOfFirstGroup};
-        firstGroupFirstElem = secondGroupFirstElem;
-        sizeOfFirstGroup = sizeOfSecondGroup;
-        secondGroupFirstElem = transferInfo[0];
-        sizeOfSecondGroup = transferInfo[1];
+        std::swap(firstGroupFirstElem, secondGroupFirstElem);
+        std::swap(sizeOfFirstGroup, sizeOfSecondGroup);
     }
+
     // move the gap begween groups
     auto copyOfNumber = number;
     size_t firstGapElem = firstGroupFirstElem + sizeOfFirstGroup;
@@ -165,177 +155,152 @@ T getSwappedNumber(T number, size_t firstGroupFirstElem, size_t sizeOfFirstGroup
     return copyOfNumber;
 }
 
+void printInteger(Integer integer, std::ostream& os = std::cout)
+{
+    os << integer.value << "\n";
+    printBinaryValue(integer.value, os);
+    os << "\n";
+    printPlaces(sizeof(integer.bytes) * numBitsInByte, os);
+}
+
+void printReal(LongDouble real, std::ostream& os = std::cout)
+{
+    os << std::setprecision(25) <<real.value << "\n";
+    printBinaryValue(real.Parts.p, os);
+    printBinaryValue(real.Parts.m, os);
+    os << "\n";
+    printPlaces(sizeof(real.bytes) * numBitsInByte, os);
+}
+
 int main()
 {
-    for (;;)
+    enum
     {
-        // состояние - выбор типа числа: i или r
-        std::cout << "Enter number type: i (integer) or r (real)\n>";
-        std::string numberType;
-        std::getline(std::cin, numberType);
-        if (numberType != "i" && numberType != "r")
-        {
-            std::cout << "Error: unknown type of number\n";
-            continue;
-        }
+        Zero,
+        InputInteger,
+        InputReal,
+        ThereIsInteger,
+        ThereIsReal,
+        InputOperationInteger,
+        InputOperationReal
+    } state;
 
-        bool isInteger = numberType == "i";
-        if (isInteger)
+    Integer integer;
+    LongDouble real;
+
+    for(state = Zero;;)
+    {
+        if (state == Zero)
+            std::cout << "Enter number type: i (integer) or r (real)\n>";
+        else if (state == InputInteger)
+            std::cout << "Enter integer number\ninteger>";
+        else if (state == InputReal)
+            std::cout << "Enter real number\nreal>";
+        else if (state == ThereIsInteger || state == ThereIsReal)
+            std::cout << "Enter number type: i (integer) or r (real) or enter operation: s (swap)\n>";
+        else if (state == InputOperationInteger || state == InputOperationReal)
+            std::cout << "Enter parameters: 2 * [position of first element, size of group]\nswap>";
+
+        std::string userInput;
+        std::getline(std::cin, userInput);
+        
+        if (state == Zero)
         {
-            for (;;)
+            if (userInput == "i")
+                state = InputInteger;
+            else if (userInput == "r")
+                state = InputReal;
+            else
             {
-                // состояние - ввод числа
-                std::cout << "Enter integer number\ninteger>";
-                std::string strN;
-                std::getline(std::cin, strN);
-                if (strN == "..")
-                    break;
-
-                Integer n;
-                try
-                {
-                    n.value = std::stoi(strN);
-                    std::cout << n.value << "\n";
-                    printBinaryValue(n.value);
-                    std::cout << "\n";
-                    printPlaces(sizeof(n.bytes) * numBitsInByte);
-                }
-                catch(std::logic_error& e)
-                {
-                    std::cerr << "Error: incorrect number\n";
-                    continue;
-                }
-                
-                for (;;)
-                {
-                    // состояние - ввод кода операции
-                    std::cout << "Enter operation: s (swap)\ninteger/" << n.value << ">";
-                    std::string operation;
-                    std::getline(std::cin, operation);
-                    if (operation == "..")
-                        break;
-                    if (operation != "s")
-                    {
-                        std::cerr << "Error: unknown type of operation\n";
-                        continue;
-                    }
-                    for (;;)
-                    {
-                        // состояние - ввод параметров для операции
-                        std::cout << "Enter parameters: 2 * [position of first element, size of group]";
-                        std::cout << "\ninteger/" << n.value << "/swap>";
-                        std::string parameters;
-                        std::getline(std::cin, parameters);
-                        if (parameters == "..")
-                            break;
-
-                        std::stringstream is(parameters, std::ios_base::in);
-                        std::vector<size_t> numParameters;
-                        size_t param;
-                        while (is >> param)
-                            numParameters.push_back(param);
-
-                        if (numParameters.size() != 4)
-                        {
-                            std::cerr << "Error: unkorrect number of operation parameters\n";
-                            continue;
-                        }
-                        try
-                        {
-                            auto res = getSwappedNumber(n, numParameters[0], numParameters[1], 
-                                numParameters[2], numParameters[3]);
-                            std::cout << res.value << "\n";
-                            printBinaryValue(res.value);
-                            std::cout << "\n";
-                            printPlaces(sizeof(res.bytes) * numBitsInByte);
-                        }
-                        catch(const std::logic_error& e)
-                        {
-                            std::cerr << "Error: " << e.what() << '\n';
-                            continue;
-                        }
-                    }
-                }
+                std::cout << "Error: unknown type of number\n";
+                continue;
             }
         }
-        else
+        else if (state == InputInteger)
         {
-            for (;;)
+            try
             {
-                // состояние - ввод числа
-                std::cout << "Enter real number\nreal>";
-                std::string strN;
-                std::getline(std::cin, strN);
-                if (strN == "..")
-                        break;
+                integer.value = std::stoi(userInput);
+                printInteger(integer);
+                state = ThereIsInteger;
+            }
+            catch(std::logic_error& e)
+            {
+                std::cerr << "Error: " << e.what() <<"\n";
+                continue;
+            }
+        }
+        else if (state == InputReal)
+        {
+            try
+            {
+                real.value = std::stold(userInput);
+                printReal(real);
+                state = ThereIsReal;
+            }
+            catch(std::logic_error& e)
+            {
+                std::cerr << "Error: " << e.what() <<"\n";
+                continue;
+            }
+        }
+        else if (state == ThereIsInteger || state == ThereIsReal)
+        {
+            if (userInput == "i")
+                state = InputInteger;
+            else if (userInput == "r")
+                state = InputReal;
+            else if (userInput == "s")
+                if (state == ThereIsInteger)
+                    state = InputOperationInteger;
+                else if (state == ThereIsReal)
+                    state = InputOperationReal;
+            else
+            {
+                std::cout << "Error: unknown type of number or operation\n";
+                continue;
+            }
+        }
+        else if (state == InputOperationInteger || state == InputOperationReal)
+        {
+            std::stringstream is(userInput);
+            std::vector<size_t> numParameters;
+            try
+            {
+                for(std::string param; is >> param;)
+                    numParameters.push_back(std::stoi(param));
+            }
+            catch(const std::logic_error& e)
+            {
+                std::cerr << "Error: " << e.what() << '\n';
+                continue;
+            }
 
-                LongDouble n;
-                try
+            if (numParameters.size() != 4)
+            {
+                std::cerr << "Error: incorrect number of operation parameters\n";
+                continue;
+            }
+
+            try
+            {
+                if (state == InputOperationInteger)
                 {
-                    n.value = std::stold(strN);
-                    std::cout << n.value << "\n";
-                    printBinaryValue(n.Parts.p);
-                    printBinaryValue(n.Parts.m);
-                    std::cout << "\n";
-                    printPlaces(sizeof(n.bytes) * numBitsInByte);
-                }
-                catch(std::logic_error& e)
+                    printInteger(getSwappedNumber(integer, numParameters[0], numParameters[1],
+                                                    numParameters[2], numParameters[3]));
+                    state = ThereIsInteger;
+                }                                    
+                else if (state == InputOperationReal)
                 {
-                    std::cerr << "Error: incorrect number\n";
-                    continue;
+                    printReal(getSwappedNumber(real, numParameters[0], numParameters[1],
+                                                numParameters[2], numParameters[3]));
+                    state = ThereIsReal;
                 }
-
-                for (;;)
-                {
-                    // состояние - ввод кода операции
-                    std::cout << "Enter operation: s (swap)\nreal/" << n.value << ">";
-                    std::string operation;
-                    std::getline(std::cin, operation);
-                    if (operation == "..")
-                        break;
-                    if (operation != "s")
-                    {
-                        std::cerr << "Error: unknown type of operation\n";
-                        continue;
-                    }
-                    for (;;)
-                    {
-                        // состояние - ввод параметров для операции
-                        std::cout << "Enter parameters: 2 * [position of first element, size of group]";
-                        std::cout << "\nreal/" << n.value << "/swap>";
-                        std::string parameters;
-                        std::getline(std::cin, parameters);
-                        if (parameters == "..")
-                            break;
-
-                        std::stringstream is(parameters, std::ios_base::in);
-                        std::vector<size_t> numParameters;
-                        size_t param;
-                        while (is >> param)
-                            numParameters.push_back(param);
-
-                        if (numParameters.size() != 4)
-                        {
-                            std::cerr << "Error: unkorrect number of operation parameters\n";
-                            continue;
-                        }
-                        try
-                        {
-                            auto res = getSwappedNumber(n, numParameters[0], numParameters[1], 
-                                numParameters[2], numParameters[3]);
-                            std::cout << res.value << "\n";
-                            printBinaryValue(res.Parts.p);
-                            printBinaryValue(res.Parts.m);
-                            std::cout << "\n";
-                            printPlaces(sizeof(res.bytes) * numBitsInByte);
-                        }
-                        catch(const std::logic_error& e)
-                        {
-                            std::cerr << "Error: " << e.what() << '\n';
-                            continue;
-                        }
-                    }
-                }
+            }
+            catch(const std::logic_error& e)
+            {
+                std::cerr << "Error: " << e.what() << '\n';
+                continue;
             }
         }
     }
