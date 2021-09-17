@@ -175,7 +175,7 @@ int main()
         std::getline(std::cin, numberType);
         if (numberType != "i" && numberType != "r")
         {
-            std::cout << "Error: unknown type of number";
+            std::cout << "Error: unknown type of number\n";
             continue;
         }
 
@@ -198,7 +198,7 @@ int main()
                     std::cout << n.value << "\n";
                     printBinaryValue(n.value);
                     std::cout << "\n";
-                    printPlaces(sizeof(n) * numBitsInByte);
+                    printPlaces(sizeof(n.bytes) * numBitsInByte);
                 }
                 catch(std::logic_error& e)
                 {
@@ -237,7 +237,7 @@ int main()
 
                         if (numParameters.size() != 4)
                         {
-                            std::cerr << "Error: unkorrect number of operationparameters\n";
+                            std::cerr << "Error: unkorrect number of operation parameters\n";
                             continue;
                         }
                         try
@@ -247,7 +247,7 @@ int main()
                             std::cout << res.value << "\n";
                             printBinaryValue(res.value);
                             std::cout << "\n";
-                            printPlaces(sizeof(res) * numBitsInByte);
+                            printPlaces(sizeof(res.bytes) * numBitsInByte);
                         }
                         catch(const std::logic_error& e)
                         {
@@ -277,12 +277,64 @@ int main()
                     printBinaryValue(n.Parts.p);
                     printBinaryValue(n.Parts.m);
                     std::cout << "\n";
-                    printPlaces(sizeof(n.Parts) * numBitsInByte);
+                    printPlaces(sizeof(n.bytes) * numBitsInByte);
                 }
                 catch(std::logic_error& e)
                 {
                     std::cerr << "Error: incorrect number\n";
                     continue;
+                }
+
+                for (;;)
+                {
+                    // состояние - ввод кода операции
+                    std::cout << "Enter operation: s (swap)\nreal/" << n.value << ">";
+                    std::string operation;
+                    std::getline(std::cin, operation);
+                    if (operation == "..")
+                        break;
+                    if (operation != "s")
+                    {
+                        std::cerr << "Error: unknown type of operation\n";
+                        continue;
+                    }
+                    for (;;)
+                    {
+                        // состояние - ввод параметров для операции
+                        std::cout << "Enter parameters: 2 * [position of first element, size of group]";
+                        std::cout << "\nreal/" << n.value << "/swap>";
+                        std::string parameters;
+                        std::getline(std::cin, parameters);
+                        if (parameters == "..")
+                            break;
+
+                        std::stringstream is(parameters, std::ios_base::in);
+                        std::vector<size_t> numParameters;
+                        size_t param;
+                        while (is >> param)
+                            numParameters.push_back(param);
+
+                        if (numParameters.size() != 4)
+                        {
+                            std::cerr << "Error: unkorrect number of operation parameters\n";
+                            continue;
+                        }
+                        try
+                        {
+                            auto res = getSwappedNumber(n, numParameters[0], numParameters[1], 
+                                numParameters[2], numParameters[3]);
+                            std::cout << res.value << "\n";
+                            printBinaryValue(res.Parts.p);
+                            printBinaryValue(res.Parts.m);
+                            std::cout << "\n";
+                            printPlaces(sizeof(res.bytes) * numBitsInByte);
+                        }
+                        catch(const std::logic_error& e)
+                        {
+                            std::cerr << "Error: " << e.what() << '\n';
+                            continue;
+                        }
+                    }
                 }
             }
         }
